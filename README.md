@@ -124,6 +124,3 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - The system automatically validates connection times and warns about tight connections
 - Peak hours are 08:00-10:00 and 17:00-19:00
 
-## Support
-
-For support, please open an issue in the GitHub repository or contact the development team.
