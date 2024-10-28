@@ -18,6 +18,7 @@ public class TicketBookingSystem extends JFrame {
     private static final LocalTime LAST_TRAIN = LocalTime.of(20, 0);
     private static final int TRAIN_INTERVAL = 10; // minutes between trains
     private static final int SEARCH_WINDOW = 30; // minutes to search before and after desired time
+    private static final double PEAK_HOUR_MULTIPLIER = 1.5; // Price multiplier during peak hours
     
     private JComboBox<String> startStationCombo;
     private JComboBox<String> endStationCombo;
@@ -25,20 +26,33 @@ public class TicketBookingSystem extends JFrame {
     private JTextArea resultArea;
     private JButton findPathButton;
     private JButton confirmButton;
+    private JButton resetButton; // New reset button
     private JPanel trainSelectionPanel;
     private ArrayList<LocalTime[]> selectedTimes;
     private ArrayList<Integer> currentPath;
+    private JLabel fareLabel; // New fare display label
+    private JCheckBox roundTripCheckBox; // New round trip option
+    private SpinnerNumberModel adultModel;
+    private SpinnerNumberModel studentModel;
+    private SpinnerNumberModel seniorModel;
+    private SpinnerNumberModel childModel;
+   
+    private JSpinner adultQuantity;
+    private JSpinner studentQuantity;
+    private JSpinner seniorQuantity;
+    private JSpinner childQuantity;
     
     private final int[][] graph = new int[NUM_STATIONS][NUM_STATIONS];
     private final String[] stationNames = {"A", "B", "C", "D", "E", "F"};
+    private final double BASE_FARE_PER_KM = 2.0; // Base fare per kilometer
     
-     public TicketBookingSystem() {
+    public TicketBookingSystem() {
         initializeGraph();
         setupTestTime();
         setupGUI();
         selectedTimes = new ArrayList<>();
     }
-     
+    
      private void setupTestTime() {
         // Create test time panel
         JPanel testPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
@@ -119,77 +133,140 @@ public class TicketBookingSystem extends JFrame {
         setTitle("Metro Ticket Booking System");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLayout(new BorderLayout(10, 10));
-        
+
         // Input Panel
         JPanel inputPanel = new JPanel(new GridBagLayout());
         inputPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-        
+
         GridBagConstraints gridBagLayout = new GridBagConstraints();
         gridBagLayout.fill = GridBagConstraints.HORIZONTAL;
         gridBagLayout.insets = new Insets(5, 5, 5, 5);
+
+        int row = 0;
+
+        // Start Station
+        gridBagLayout.gridx = 0;
+        gridBagLayout.gridy = row++;
+        inputPanel.add(new JLabel("Passengers:"), gridBagLayout);
         
+        JPanel passengerPanel = new JPanel(new GridLayout(4, 2, 10, 10));
+        
+        adultModel = new SpinnerNumberModel(1, 0, 10, 1);
+        studentModel = new SpinnerNumberModel(0, 0, 10, 1);
+        seniorModel = new SpinnerNumberModel(0, 0, 10, 1);
+        childModel = new SpinnerNumberModel(0, 0, 10, 1);
+        
+        adultQuantity = new JSpinner(adultModel);
+        studentQuantity = new JSpinner(studentModel);
+        seniorQuantity = new JSpinner(seniorModel);
+        childQuantity = new JSpinner(childModel);
+        
+        adultQuantity.addChangeListener(e -> updateFareEstimate());
+        studentQuantity.addChangeListener(e -> updateFareEstimate());
+        seniorQuantity.addChangeListener(e -> updateFareEstimate());
+        childQuantity.addChangeListener(e -> updateFareEstimate());
+
+        passengerPanel.add(new JLabel("Adults (Full Fare):"));
+        passengerPanel.add(adultQuantity);
+        passengerPanel.add(new JLabel("Students (50% Off):"));
+        passengerPanel.add(studentQuantity);
+        passengerPanel.add(new JLabel("Senior Citizens (40% Off):"));
+        passengerPanel.add(seniorQuantity);
+        passengerPanel.add(new JLabel("Children (70% Off):"));
+        passengerPanel.add(childQuantity);
+
+        gridBagLayout.gridx = 1;
+        inputPanel.add(passengerPanel, gridBagLayout);
+
+
         startStationCombo = new JComboBox<>(stationNames);
+        gridBagLayout.gridx = 1;
+        inputPanel.add(startStationCombo, gridBagLayout);
+
+        // End Station
+        gridBagLayout.gridx = 0;
+        gridBagLayout.gridy = row++;
+        inputPanel.add(new JLabel("End Station:"), gridBagLayout);
+
         endStationCombo = new JComboBox<>(stationNames);
-        
-        // Set default time to current time + 5 minutes
+        gridBagLayout.gridx = 1;
+        inputPanel.add(endStationCombo, gridBagLayout);
+
+        // Time Selection
+        gridBagLayout.gridx = 0;
+        gridBagLayout.gridy = row++;
+        inputPanel.add(new JLabel("Desired Departure Time:"), gridBagLayout);
+
         Calendar cal = Calendar.getInstance();
-        cal.add(Calendar.MINUTE, 5); // Add 5 minutes to current time
+        cal.add(Calendar.MINUTE, 5);
         Date defaultTime = cal.getTime();
-        
+
         SpinnerDateModel timeModel = new SpinnerDateModel(
-            defaultTime, // initial value (current time + 5 minutes)
-            null,       // minimum value (no minimum)
-            null,       // maximum value (no maximum)
-            Calendar.MINUTE // step field (minutes)
+            defaultTime, null, null, Calendar.MINUTE
         );
-        
+
         timeSpinner = new JSpinner(timeModel);
         JSpinner.DateEditor timeEditor = new JSpinner.DateEditor(timeSpinner, "HH:mm");
         timeSpinner.setEditor(timeEditor);
-        
-        gridBagLayout.gridx = 0; gridBagLayout.gridy = 0;
-        inputPanel.add(new JLabel("Start Station:"), gridBagLayout);
-        
-        gridBagLayout.gridx = 1;
-        inputPanel.add(startStationCombo, gridBagLayout);
-        
-        gridBagLayout.gridx = 0; gridBagLayout.gridy = 1;
-        inputPanel.add(new JLabel("End Station:"), gridBagLayout);
-        
-        gridBagLayout.gridx = 1;
-        inputPanel.add(endStationCombo, gridBagLayout);
-        
-        gridBagLayout.gridx = 0; gridBagLayout.gridy = 2;
-        inputPanel.add(new JLabel("Desired Departure Time:"), gridBagLayout);
-        
         gridBagLayout.gridx = 1;
         inputPanel.add(timeSpinner, gridBagLayout);
-        
+
+        // Passenger Selection
+        gridBagLayout.gridx = 0;
+        gridBagLayout.gridy = row++;
+        inputPanel.add(new JLabel("Passengers:"), gridBagLayout);
+
+        gridBagLayout.gridx = 1;
+        inputPanel.add(passengerPanel, gridBagLayout);
+
+        // Passenger Category
+        gridBagLayout.gridx = 0;
+        gridBagLayout.gridy = row++;
+        inputPanel.add(new JLabel("Passenger Category:"), gridBagLayout);
+
+        gridBagLayout.gridx = 0;
+        gridBagLayout.gridy = row++;
+        gridBagLayout.gridwidth = 2;
+        roundTripCheckBox = new JCheckBox("Round Trip (10% Discount on Return Journey)");
+        inputPanel.add(roundTripCheckBox, gridBagLayout);
+
+        // Fare Display
+        gridBagLayout.gridx = 0;
+        gridBagLayout.gridy = row++;
+        gridBagLayout.gridwidth = 2;
+        fareLabel = new JLabel("Estimated Fare: --");
+        fareLabel.setFont(new Font("Arial", Font.BOLD, 14));
+        inputPanel.add(fareLabel, gridBagLayout);
+
+        // Buttons Panel
+        gridBagLayout.gridx = 0;
+        gridBagLayout.gridy = row++;
+        gridBagLayout.gridwidth = 2;
+        JPanel buttonPanel = new JPanel(new FlowLayout());
         findPathButton = new JButton("Find Available Trains");
         findPathButton.addActionListener(e -> findPath());
-        
-        gridBagLayout.gridx = 0; gridBagLayout.gridy = 3;
-        gridBagLayout.gridwidth = 2;
-        inputPanel.add(findPathButton, gridBagLayout);
-        
-        confirmButton = new JButton("Confirm Booking");
-        confirmButton.setEnabled(false);
-        confirmButton.setFont(new Font("Arial", Font.BOLD, 14));
-        confirmButton.setPreferredSize(new Dimension(120, 35));
-        confirmButton.setBorder(BorderFactory.createEmptyBorder(5, 10, 5, 10));
-        confirmButton.addActionListener(e -> showTicket());
-        
+        resetButton = new JButton("Reset");
+        resetButton.addActionListener(e -> resetForm());
+        buttonPanel.add(findPathButton);
+        buttonPanel.add(resetButton);
+        inputPanel.add(buttonPanel, gridBagLayout);
+
         // Train Selection Panel
         trainSelectionPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         trainSelectionPanel.setBorder(BorderFactory.createTitledBorder("Available Trains"));
         JScrollPane trainScrollPane = new JScrollPane(trainSelectionPanel);
         trainScrollPane.setPreferredSize(new Dimension(750, 200));
-        
+
         // Result Area
         resultArea = new JTextArea(15, 40);
         resultArea.setEditable(false);
         JScrollPane resultScrollPane = new JScrollPane(resultArea);
-        
+
+        confirmButton = new JButton("Confirm Booking");
+        confirmButton.setEnabled(false);
+        confirmButton.setFont(new Font("Arial", Font.BOLD, 14));
+        confirmButton.addActionListener(e -> showTicket());
+
         // Main Panel
         JPanel mainPanel = new JPanel(new BorderLayout());
         mainPanel.add(trainScrollPane, BorderLayout.NORTH);
@@ -202,6 +279,71 @@ public class TicketBookingSystem extends JFrame {
         pack();
         setLocationRelativeTo(null);
         setMinimumSize(new Dimension(800, 600));
+
+        // Add change listeners
+        startStationCombo.addActionListener(e -> updateFareEstimate());
+        endStationCombo.addActionListener(e -> updateFareEstimate());
+        roundTripCheckBox.addActionListener(e -> updateFareEstimate());
+    }
+     
+    private void resetForm() {
+        startStationCombo.setSelectedIndex(0);
+        endStationCombo.setSelectedIndex(0);
+        roundTripCheckBox.setSelected(false);
+        
+        // Reset time to current time + 5 minutes
+        Calendar cal = Calendar.getInstance();
+        cal.add(Calendar.MINUTE, 5);
+        timeSpinner.setValue(cal.getTime());
+        
+        // Clear selections and results
+        trainSelectionPanel.removeAll();
+        trainSelectionPanel.revalidate();
+        trainSelectionPanel.repaint();
+        resultArea.setText("");
+        selectedTimes.clear();
+        confirmButton.setEnabled(false);
+        fareLabel.setText("Estimated Fare: --");
+    }
+    
+    private void updateFareEstimate() {
+        int startStation = startStationCombo.getSelectedIndex();
+        int endStation = endStationCombo.getSelectedIndex();
+        
+        if (startStation != endStation) {
+            double fare = calculateFare(startStation, endStation);
+            fareLabel.setText(String.format("Estimated Fare: %.2f", fare));
+        } else {
+            fareLabel.setText("Estimated Fare: --");
+        }
+    }
+    
+    private double calculateFare(int startStation, int endStation) {
+        // Calculate base fare based on distance
+        int[] distances = new int[NUM_STATIONS];
+        int[] previousStations = new int[NUM_STATIONS];
+        dijkstra(startStation, distances, previousStations);
+
+        double baseFare = distances[endStation] * BASE_FARE_PER_KM;
+
+        // Apply category discounts
+        int adultCount = (int) adultQuantity.getValue();
+        int studentCount = (int) studentQuantity.getValue();
+        int seniorCount = (int) seniorQuantity.getValue();
+        int childCount = (int) childQuantity.getValue();
+
+        double totalFare = 0.0;
+        totalFare += adultCount * baseFare;
+        totalFare += studentCount * baseFare * 0.5;  // 50% student discount
+        totalFare += seniorCount * baseFare * 0.6;  // 40% senior citizen discount
+        totalFare += childCount * baseFare * 0.3;   // 70% child discount
+
+        // Apply round trip discount if selected
+        if (roundTripCheckBox.isSelected()) {
+            totalFare *= 1.8; // 10% discount on return journey
+        }
+
+        return totalFare;
     }
     
     private ArrayList<LocalTime[]> getAvailableTrains(LocalTime desiredTime, int travelMinutes) {
@@ -252,6 +394,11 @@ public class TicketBookingSystem extends JFrame {
     }
     
     private void findPath() {
+        
+        if (!validatePassengerCount()) {
+            return;
+        }
+        
         trainSelectionPanel.removeAll();
         selectedTimes.clear();
         confirmButton.setEnabled(false);
@@ -489,13 +636,87 @@ public class TicketBookingSystem extends JFrame {
             ticket.append(String.format("  Departure: %-48s  \n", times[0].format(DateTimeFormatter.ofPattern("HH:mm")) + " hrs"));
             ticket.append(String.format("  Arrival:   %-48s  \n", times[1].format(DateTimeFormatter.ofPattern("HH:mm")) + " hrs"));
             ticket.append(String.format("  Duration:  %-48s  \n", journeyMinutes + " minutes"));
-            ticket.append("╟──────────────────────────────────────────────────────────────╢\n");
 
             totalMinutes += journeyMinutes;
             previousArrival = times[1];
         }
 
-        ticket.append(String.format("  Total Journey Time: %-42s  \n", totalMinutes + " minutes"));
+        ticket.append(String.format(" \n Total Journey Time: %-42s  \n", totalMinutes + " minutes"));
+
+        // Add Fare Breakdown section
+        ticket.append("╟──────────────────────────────────────────────────────────────╢\n");
+        ticket.append("                     FARE BREAKDOWN                     \n");
+        ticket.append("╠══════════════════════════════════════════════════════════════╣\n");
+
+        int[] distances = new int[NUM_STATIONS];
+        int[] previousStations = new int[NUM_STATIONS];
+        int startStation = currentPath.get(0);
+        int endStation = currentPath.get(currentPath.size() - 1);
+
+        dijkstra(startStation, distances, previousStations);
+        double baseFare = distances[endStation] * BASE_FARE_PER_KM;
+
+        // Check peak hour status
+        LocalTime currentTime = getCurrentTime();
+        boolean isPeakHour = (currentTime.isAfter(LocalTime.of(8, 0)) && 
+                             currentTime.isBefore(LocalTime.of(10, 0))) || 
+                            (currentTime.isAfter(LocalTime.of(17, 0)) && 
+                             currentTime.isBefore(LocalTime.of(19, 0)));
+
+        ticket.append(String.format("  Base fare (%.1f km × %.2f ₺/km): %-33.2f \n", 
+            (double)distances[endStation], BASE_FARE_PER_KM, baseFare));
+        ticket.append("╟──────────────────────────────────────────────────────────────╢\n");
+
+        if (isPeakHour) {
+            ticket.append(String.format("  Peak hour surcharge (%.1f×): %-37.2f \n", 
+                PEAK_HOUR_MULTIPLIER, baseFare * (PEAK_HOUR_MULTIPLIER - 1)));
+            baseFare *= PEAK_HOUR_MULTIPLIER;
+        }
+
+        int adultCount = (int) adultQuantity.getValue();
+        int studentCount = (int) studentQuantity.getValue();
+        int seniorCount = (int) seniorQuantity.getValue();
+        int childCount = (int) childQuantity.getValue();
+        double totalFare = 0.0;
+
+        if (adultCount > 0) {
+            double adultFare = adultCount * baseFare;
+            totalFare += adultFare;
+            ticket.append(String.format("  Adults (%d × %.2f ₺): %-42.2f \n", 
+                adultCount, baseFare, adultFare));
+        }
+
+        if (studentCount > 0) {
+            double studentFare = studentCount * baseFare * 0.5;
+            totalFare += studentFare;
+            ticket.append(String.format("  Students (%d × %.2f ₺ × 50%%): %-35.2f \n", 
+                studentCount, baseFare, studentFare));
+        }
+
+        if (seniorCount > 0) {
+            double seniorFare = seniorCount * baseFare * 0.6;
+            totalFare += seniorFare;
+            ticket.append(String.format("  Senior Citizens (%d × %.2f ₺ × 60%%): %-30.2f \n", 
+                seniorCount, baseFare, seniorFare));
+        }
+
+        if (childCount > 0) {
+            double childFare = childCount * baseFare * 0.3;
+            totalFare += childFare;
+            ticket.append(String.format("  Children (%d × %.2f ₺ × 30%%): %-35.2f \n", 
+                childCount, baseFare, childFare));
+        }
+
+        if (roundTripCheckBox.isSelected()) {
+            double returnDiscount = totalFare * 0.1;
+            ticket.append(String.format("  Round Trip Discount (10%%): -%-35.2f \n", returnDiscount));
+            totalFare *= 1.8; // Apply 10% discount on return journey
+        }
+
+        ticket.append("╟──────────────────────────────────────────────────────────────╢\n");
+        ticket.append(String.format("  Total Fare: %-48.2f ₺\n", totalFare));
+
+        // Important Notes section
         ticket.append("╟──────────────────────────────────────────────────────────────╢\n");
         ticket.append("                     IMPORTANT NOTES                     \n");
         ticket.append("╠══════════════════════════════════════════════════════════════╣\n");
@@ -571,6 +792,31 @@ public class TicketBookingSystem extends JFrame {
         }
 
         resultArea.setText(schedule.toString());
+    }
+     
+     private boolean validatePassengerCount() {
+        int totalPassengers = (int)adultQuantity.getValue() + 
+                            (int)studentQuantity.getValue() + 
+                            (int)seniorQuantity.getValue() + 
+                            (int)childQuantity.getValue();
+        
+        if (totalPassengers == 0) {
+            JOptionPane.showMessageDialog(this, 
+                "Please select at least one passenger.", 
+                "Invalid Selection", 
+                JOptionPane.WARNING_MESSAGE);
+            return false;
+        }
+        
+        if (totalPassengers > 10) {
+            JOptionPane.showMessageDialog(this, 
+                "Maximum 10 passengers allowed per booking.", 
+                "Invalid Selection", 
+                JOptionPane.WARNING_MESSAGE);
+            return false;
+        }
+        
+        return true;
     }
     
     private void dijkstra(int startStation, int[] distances, int[] previousStations) {
