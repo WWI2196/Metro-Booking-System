@@ -228,36 +228,41 @@ public class TicketBookingSystem extends JFrame {
     }
     
     private void updateSchedule(ArrayList<Integer> path) {
-        if (selectedTimes.size() != path.size() - 1) {
-            return;
-        }
-        
-        StringBuilder schedule = new StringBuilder();
-        schedule.append("Trip ").append(stationNames[path.get(0)])
-                .append(" to ").append(stationNames[path.get(path.size() - 1)])
-                .append("\n--------------\n");
-        
-        int totalMinutes = 0;
-        
-        for (int i = 0; i < path.size() - 1; i++) {
-            LocalTime[] times = selectedTimes.get(i);
-            schedule.append(String.format("%s to %s : Start at %s - Stops at %s\n",
-                    stationNames[path.get(i)],
-                    stationNames[path.get(i + 1)],
-                    times[0].format(DateTimeFormatter.ofPattern("HH:mm")),
-                    times[1].format(DateTimeFormatter.ofPattern("HH:mm"))));
-            
-            totalMinutes += times[0].until(times[1], java.time.temporal.ChronoUnit.MINUTES);
-            
-            if (i < selectedTimes.size() - 1) {
-                totalMinutes += selectedTimes.get(i+1)[0].until(times[1], 
-                    java.time.temporal.ChronoUnit.MINUTES);
-            }
-        }
-        
-        schedule.append(String.format("\nTotal time = %d minutes", totalMinutes));
-        resultArea.setText(schedule.toString());
+    if (selectedTimes.size() != path.size() - 1) {
+        return;
     }
+
+    StringBuilder schedule = new StringBuilder();
+    schedule.append("Trip ").append(stationNames[path.get(0)])
+            .append(" to ").append(stationNames[path.get(path.size() - 1)])
+            .append("\n--------------\n");
+
+    int totalMinutes = 0;
+    LocalTime previousArrival = null;
+
+    for (int i = 0; i < path.size() - 1; i++) {
+        LocalTime[] times = selectedTimes.get(i);
+        schedule.append(String.format("%s to %s : Start at %s - Stops at %s\n",
+                stationNames[path.get(i)],
+                stationNames[path.get(i + 1)],
+                times[0].format(DateTimeFormatter.ofPattern("HH:mm")),
+                times[1].format(DateTimeFormatter.ofPattern("HH:mm"))));
+
+        // Add journey time
+        totalMinutes += times[0].until(times[1], java.time.temporal.ChronoUnit.MINUTES);
+
+        // Add transfer time if this isn't the last segment
+        if (previousArrival != null) {
+            int transferTime = (int) previousArrival.until(times[0], java.time.temporal.ChronoUnit.MINUTES);
+            totalMinutes += transferTime;
+        }
+
+        previousArrival = times[1];
+    }
+
+    schedule.append(String.format("\nTotal time = %d minutes", totalMinutes));
+    resultArea.setText(schedule.toString());
+}
     
     private void dijkstra(int startStation, int[] distances, int[] previousStations) {
         boolean[] visited = new boolean[NUM_STATIONS];
@@ -304,44 +309,6 @@ public class TicketBookingSystem extends JFrame {
         }
         
         return path;
-    }
-    
-    private void generateSchedule(ArrayList<Integer> path, LocalTime startTime) {
-        StringBuilder schedule = new StringBuilder();
-        schedule.append("Trip ").append(stationNames[path.get(0)])
-                .append(" to ").append(stationNames[path.get(path.size() - 1)])
-                .append("\n--------------\n");
-        
-        LocalTime currentTime = startTime;
-        int totalMinutes = 0;
-        
-        for (int i = 0; i < path.size() - 1; i++) {
-            int from = path.get(i);
-            int to = path.get(i + 1);
-            int distance = graph[from][to];
-            
-            // Calculate travel time in minutes
-            int travelMinutes = (int) Math.ceil((distance / (double) TRAIN_SPEED) * 60);
-            
-            LocalTime arrivalTime = currentTime.plusMinutes(travelMinutes);
-            
-            schedule.append(String.format("%s to %s : Start at %s - Stops at %s\n",
-                    stationNames[from],
-                    stationNames[to],
-                    currentTime.format(DateTimeFormatter.ofPattern("HH:mm")),
-                    arrivalTime.format(DateTimeFormatter.ofPattern("HH:mm"))));
-            
-            totalMinutes += travelMinutes;
-            
-            // Add waiting time for next leg
-            if (i < path.size() - 2) {
-                currentTime = arrivalTime.plusMinutes(STATION_WAIT_TIME);
-                totalMinutes += STATION_WAIT_TIME;
-            }
-        }
-        
-        schedule.append(String.format("\nTotal time = %d minutes", totalMinutes));
-        resultArea.setText(schedule.toString());
     }
     
     public static void main(String[] args) {
