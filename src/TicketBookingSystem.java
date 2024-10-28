@@ -26,12 +26,12 @@ public class TicketBookingSystem extends JFrame {
     private JTextArea resultArea;
     private JButton findPathButton;
     private JButton confirmButton;
-    private JButton resetButton; // New reset button
+    private JButton resetButton; 
     private JPanel trainSelectionPanel;
     private ArrayList<LocalTime[]> selectedTimes;
     private ArrayList<Integer> currentPath;
-    private JLabel fareLabel; // New fare display label
-    private JCheckBox roundTripCheckBox; // New round trip option
+    private JLabel fareLabel; 
+    private JCheckBox roundTripCheckBox; 
     private SpinnerNumberModel adultModel;
     private SpinnerNumberModel studentModel;
     private SpinnerNumberModel seniorModel;
@@ -57,8 +57,7 @@ public class TicketBookingSystem extends JFrame {
         // Create test time panel
         JPanel testPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         testPanel.setBorder(BorderFactory.createTitledBorder("Set Current Time (For Testing)"));
-        
-        // Initialize time spinner with current time
+
         Calendar cal = Calendar.getInstance();
         SpinnerDateModel testTimeModel = new SpinnerDateModel(
             cal.getTime(),
@@ -126,7 +125,7 @@ public class TicketBookingSystem extends JFrame {
     
     private void addConnection(int from, int to, int distance) {
         graph[from][to] = distance;
-        graph[to][from] = distance; // Undirected graph
+        graph[to][from] = distance;
     }
     
     private void setupGUI() {
@@ -340,7 +339,7 @@ public class TicketBookingSystem extends JFrame {
 
         // Apply round trip discount if selected
         if (roundTripCheckBox.isSelected()) {
-            totalFare *= 1.8; // 10% discount on return journey
+            totalFare *= 1.8; 
         }
 
         return totalFare;
@@ -359,7 +358,7 @@ public class TicketBookingSystem extends JFrame {
             startWindow = systemTime;
         }
 
-        // Calculate the next train time based on the start window
+        // Calculate the next train time 
         LocalTime nextTrainTime = startWindow;
         int minutes = nextTrainTime.getMinute();
         int roundedMinutes = ((minutes + TRAIN_INTERVAL - 1) / TRAIN_INTERVAL) * TRAIN_INTERVAL;
@@ -377,7 +376,7 @@ public class TicketBookingSystem extends JFrame {
         }
 
         int optionsCount = 0;
-        while (!nextTrainTime.isAfter(endWindow) && optionsCount < 6) {  // Changed from 5 to 6
+        while (!nextTrainTime.isAfter(endWindow) && optionsCount < 8) {  
             // Only add trains that are within operating hours
             if (!nextTrainTime.isBefore(FIRST_TRAIN) && !nextTrainTime.isAfter(LAST_TRAIN)) {
                 LocalTime arrival = nextTrainTime.plusMinutes(travelMinutes + STATION_WAIT_TIME);
@@ -410,8 +409,7 @@ public class TicketBookingSystem extends JFrame {
             JOptionPane.showMessageDialog(this, "Please select different stations for start and end points.");
             return;
         }
-        
-        // Get selected time
+
         Date selectedDate = (Date) timeSpinner.getValue();
         LocalTime selectedTime = LocalTime.ofInstant(selectedDate.toInstant(), 
                                                    ZoneId.systemDefault())
@@ -422,7 +420,6 @@ public class TicketBookingSystem extends JFrame {
         if (selectedTime.isBefore(currentTime)) {
             JOptionPane.showMessageDialog(this, 
                 "Selected departure time has already passed. Please select a future time.");
-            // Update the time spinner to current time + 5 minutes
             Calendar cal = Calendar.getInstance();
             cal.set(Calendar.HOUR_OF_DAY, currentTime.getHour());
             cal.set(Calendar.MINUTE, currentTime.getMinute());
@@ -527,7 +524,7 @@ public class TicketBookingSystem extends JFrame {
         }
 
         trainSelectionPanel.add(segmentsPanel);
-        updateSchedule(path); // Clear the display initially
+        updateSchedule(path); // Clear the display 
     }
     
      private void regenerateNextSegment(ArrayList<Integer> path, int segmentIndex, LocalTime startTime) {
@@ -541,7 +538,7 @@ public class TicketBookingSystem extends JFrame {
         // Remove impossible train connections
         availableTrains.removeIf(train -> train[0].isBefore(startTime.plusMinutes(MIN_TRANSFER_TIME)));
         
-        // Update the UI to accomodate the next train times
+        // Update to accomodate the next train times according to the selected times
         Component[] components = trainSelectionPanel.getComponents();
         if (components.length > 0 && components[0] instanceof JPanel) {
             JPanel segmentsPanel = (JPanel) components[0];
@@ -716,7 +713,6 @@ public class TicketBookingSystem extends JFrame {
         ticket.append("╟──────────────────────────────────────────────────────────────╢\n");
         ticket.append(String.format("  Total Fare: %-48.2f ₺\n", totalFare));
 
-        // Important Notes section
         ticket.append("╟──────────────────────────────────────────────────────────────╢\n");
         ticket.append("                     IMPORTANT NOTES                     \n");
         ticket.append("╠══════════════════════════════════════════════════════════════╣\n");
@@ -742,6 +738,7 @@ public class TicketBookingSystem extends JFrame {
         ticketDialog.setLocationRelativeTo(this);
         ticketDialog.setVisible(true);
     }
+
     
      private void updateSchedule(ArrayList<Integer> path) {
         StringBuilder schedule = new StringBuilder();
@@ -782,7 +779,7 @@ public class TicketBookingSystem extends JFrame {
             }
 
             if (!selectedTimes.isEmpty()) {
-                schedule.append("\nTotal time = " + totalMinutes + " minutes\n");
+                schedule.append("\nTotal time = ").append(totalMinutes).append(" minutes\n");
                 schedule.append("(Including waiting times at transfer stations)\n");
                 if (hasTightConnection) {
                     schedule.append("\n⚠ WARNING: This journey includes tight connections!\n");
@@ -870,8 +867,7 @@ public class TicketBookingSystem extends JFrame {
         SwingUtilities.invokeLater(() -> {
             try {
                 UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-            } catch (Exception e) {
-                e.printStackTrace();
+            } catch (ClassNotFoundException | IllegalAccessException | InstantiationException | UnsupportedLookAndFeelException e) {
             }
             new TicketBookingSystem().setVisible(true);
         });
