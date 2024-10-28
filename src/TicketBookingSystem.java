@@ -5,6 +5,10 @@ import java.time.*;
 import java.time.format.*;
 
 public class TicketBookingSystem extends JFrame {
+    
+    private static LocalTime simulatedCurrentTime = LocalTime.of(13, 0);
+    private JSpinner testTimeSpinner;
+    
     private static final int INFINITY = Integer.MAX_VALUE;
     private static final int NUM_STATIONS = 6;
     private static final int TRAIN_SPEED = 30; // km/h
@@ -28,10 +32,61 @@ public class TicketBookingSystem extends JFrame {
     private final int[][] graph = new int[NUM_STATIONS][NUM_STATIONS];
     private final String[] stationNames = {"A", "B", "C", "D", "E", "F"};
     
-    public TicketBookingSystem() {
+     public TicketBookingSystem() {
         initializeGraph();
+        setupTestTime();
         setupGUI();
         selectedTimes = new ArrayList<>();
+    }
+     
+     private void setupTestTime() {
+        // Create test time panel
+        JPanel testPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        testPanel.setBorder(BorderFactory.createTitledBorder("Set Current Time (For Testing)"));
+        
+        // Initialize time spinner with current time
+        Calendar cal = Calendar.getInstance();
+        SpinnerDateModel testTimeModel = new SpinnerDateModel(
+            cal.getTime(),
+            null,
+            null,
+            Calendar.MINUTE
+        );
+        
+        testTimeSpinner = new JSpinner(testTimeModel);
+        JSpinner.DateEditor testTimeEditor = new JSpinner.DateEditor(testTimeSpinner, "HH:mm");
+        testTimeSpinner.setEditor(testTimeEditor);
+        
+        // Add update button
+        JButton updateButton = new JButton("Set As Current Time");
+        updateButton.addActionListener(e -> {
+            Date date = (Date) testTimeSpinner.getValue();
+            simulatedCurrentTime = LocalTime.ofInstant(date.toInstant(), 
+                                                     ZoneId.systemDefault())
+                                          .withSecond(0)
+                                          .withNano(0);
+            updateDefaultDepartureTime();
+        });
+        
+        testPanel.add(new JLabel("Test Time:"));
+        testPanel.add(testTimeSpinner);
+        testPanel.add(updateButton);
+        
+        // Add to main frame
+        add(testPanel, BorderLayout.SOUTH);
+    }
+     
+     private void updateDefaultDepartureTime() {
+        LocalTime currentTime = getCurrentTime();
+        Calendar cal = Calendar.getInstance();
+        cal.set(Calendar.HOUR_OF_DAY, currentTime.getHour());
+        cal.set(Calendar.MINUTE, currentTime.getMinute());
+        cal.add(Calendar.MINUTE, 5);
+        timeSpinner.setValue(cal.getTime());
+    }
+     
+    private LocalTime getCurrentTime() {
+        return simulatedCurrentTime;
     }
     
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm");
@@ -76,7 +131,18 @@ public class TicketBookingSystem extends JFrame {
         startStationCombo = new JComboBox<>(stationNames);
         endStationCombo = new JComboBox<>(stationNames);
         
-        SpinnerDateModel timeModel = new SpinnerDateModel();
+        // Set default time to current time + 5 minutes
+        Calendar cal = Calendar.getInstance();
+        cal.add(Calendar.MINUTE, 5); // Add 5 minutes to current time
+        Date defaultTime = cal.getTime();
+        
+        SpinnerDateModel timeModel = new SpinnerDateModel(
+            defaultTime, // initial value (current time + 5 minutes)
+            null,       // minimum value (no minimum)
+            null,       // maximum value (no maximum)
+            Calendar.MINUTE // step field (minutes)
+        );
+        
         timeSpinner = new JSpinner(timeModel);
         JSpinner.DateEditor timeEditor = new JSpinner.DateEditor(timeSpinner, "HH:mm");
         timeSpinner.setEditor(timeEditor);
@@ -138,18 +204,20 @@ public class TicketBookingSystem extends JFrame {
         setMinimumSize(new Dimension(800, 600));
     }
     
-    private ArrayList<LocalTime[]> getAvailableTrains(LocalTime currentTime, int travelMinutes) {
+    private ArrayList<LocalTime[]> getAvailableTrains(LocalTime desiredTime, int travelMinutes) {
         ArrayList<LocalTime[]> trains = new ArrayList<>();
-        LocalTime systemTime = LocalTime.now(); // Get current system time
+        LocalTime systemTime = getCurrentTime();
 
-        LocalTime startWindow = currentTime.minusMinutes(SEARCH_WINDOW);
-        LocalTime endWindow = currentTime.plusMinutes(SEARCH_WINDOW);
+        // Only search for trains starting from the desired time
+        LocalTime startWindow = desiredTime;
+        LocalTime endWindow = desiredTime.plusMinutes(SEARCH_WINDOW);
 
+        // Ensure we don't show trains before the current time
         if (startWindow.isBefore(systemTime)) {
             startWindow = systemTime;
         }
 
-        // Start with the first possible train time
+        // Calculate the next train time based on the start window
         LocalTime nextTrainTime = startWindow;
         int minutes = nextTrainTime.getMinute();
         int roundedMinutes = ((minutes + TRAIN_INTERVAL - 1) / TRAIN_INTERVAL) * TRAIN_INTERVAL;
@@ -161,13 +229,15 @@ public class TicketBookingSystem extends JFrame {
         }
         nextTrainTime = nextTrainTime.withSecond(0).withNano(0);
 
-        int optionsCount = 0;
-        while (!nextTrainTime.isAfter(endWindow) && optionsCount < 5) {
-            // Check if train has not departed yet
-            if (!nextTrainTime.isBefore(systemTime) && 
-                !nextTrainTime.isBefore(FIRST_TRAIN) && 
-                !nextTrainTime.isAfter(LAST_TRAIN)) {
+        // Make sure the first train time is not before either the system time or desired time
+        while (nextTrainTime.isBefore(systemTime) || nextTrainTime.isBefore(desiredTime)) {
+            nextTrainTime = nextTrainTime.plusMinutes(TRAIN_INTERVAL);
+        }
 
+        int optionsCount = 0;
+        while (!nextTrainTime.isAfter(endWindow) && optionsCount < 6) {  // Changed from 5 to 6
+            // Only add trains that are within operating hours
+            if (!nextTrainTime.isBefore(FIRST_TRAIN) && !nextTrainTime.isAfter(LAST_TRAIN)) {
                 LocalTime arrival = nextTrainTime.plusMinutes(travelMinutes + STATION_WAIT_TIME);
                 if (!arrival.isAfter(LAST_TRAIN)) {
                     trains.add(new LocalTime[]{nextTrainTime, arrival});
@@ -179,7 +249,7 @@ public class TicketBookingSystem extends JFrame {
 
         trains.sort((a, b) -> a[0].compareTo(b[0]));
         return trains;
-}
+    }
     
     private void findPath() {
         trainSelectionPanel.removeAll();
@@ -197,14 +267,20 @@ public class TicketBookingSystem extends JFrame {
         // Get selected time
         Date selectedDate = (Date) timeSpinner.getValue();
         LocalTime selectedTime = LocalTime.ofInstant(selectedDate.toInstant(), 
-                                                   java.time.ZoneId.systemDefault())
+                                                   ZoneId.systemDefault())
                                         .withSecond(0)
                                         .withNano(0);
-        LocalTime currentTime = LocalTime.now();
+        LocalTime currentTime = getCurrentTime();
         
         if (selectedTime.isBefore(currentTime)) {
             JOptionPane.showMessageDialog(this, 
-                "Please set a proper depature time considering your checking-in time.");
+                "Selected departure time has already passed. Please select a future time.");
+            // Update the time spinner to current time + 5 minutes
+            Calendar cal = Calendar.getInstance();
+            cal.set(Calendar.HOUR_OF_DAY, currentTime.getHour());
+            cal.set(Calendar.MINUTE, currentTime.getMinute());
+            cal.add(Calendar.MINUTE, 5);
+            timeSpinner.setValue(cal.getTime());
             return;
         }
         
