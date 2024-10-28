@@ -108,6 +108,27 @@ public class TicketBookingSystem extends JFrame {
         
         confirmButton = new JButton("Confirm Booking");
         confirmButton.setEnabled(false);
+        confirmButton.setBackground(new Color(255, 69, 0)); // Bright orange-red color
+        confirmButton.setForeground(Color.WHITE);
+        confirmButton.setFont(new Font("Arial", Font.BOLD, 14));
+        confirmButton.setPreferredSize(new Dimension(120, 35));
+        confirmButton.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(new Color(204, 55, 0), 2),
+            BorderFactory.createEmptyBorder(5, 10, 5, 10)
+        ));
+        // Add hover effect
+        confirmButton.addMouseListener(new MouseAdapter() {
+            public void mouseEntered(MouseEvent e) {
+                if(confirmButton.isEnabled()) {
+                    confirmButton.setBackground(new Color(204, 55, 0));
+                }
+            }
+            public void mouseExited(MouseEvent e) {
+                if(confirmButton.isEnabled()) {
+                    confirmButton.setBackground(new Color(255, 69, 0));
+                }
+            }
+        });
         confirmButton.addActionListener(e -> showTicket());
         
         // Train Selection Panel with horizontal layout
@@ -215,45 +236,41 @@ public class TicketBookingSystem extends JFrame {
     private void generateTrainOptions(ArrayList<Integer> path, LocalTime desiredTime) {
         trainSelectionPanel.removeAll();
         selectedTimes.clear();
-        
-        // Create a panel for each segment that will be displayed horizontally
+        confirmButton.setEnabled(false);
+
         JPanel segmentsPanel = new JPanel();
         segmentsPanel.setLayout(new BoxLayout(segmentsPanel, BoxLayout.X_AXIS));
-        
+
         LocalTime currentTime = desiredTime;
-        
+
         for (int i = 0; i < path.size() - 1; i++) {
             int from = path.get(i);
             int to = path.get(i + 1);
             int distance = graph[from][to];
-            
+
             int travelMinutes = (int) Math.ceil((distance / (double) TRAIN_SPEED) * 60);
-            
-            // Get available trains for this segment, considering arrival time from previous segment
             ArrayList<LocalTime[]> availableTrains = getAvailableTrains(currentTime, travelMinutes);
-            
+
             if (availableTrains.isEmpty()) {
                 JOptionPane.showMessageDialog(this, 
                     "No available trains found for segment " + stationNames[from] + " to " + stationNames[to]);
                 return;
             }
-            
-            // Create segment panel
+
             JPanel segmentPanel = new JPanel();
             segmentPanel.setLayout(new BoxLayout(segmentPanel, BoxLayout.Y_AXIS));
             segmentPanel.setBorder(BorderFactory.createTitledBorder(
                 String.format("%s to %s", stationNames[from], stationNames[to])));
-            
+
             ButtonGroup group = new ButtonGroup();
             final int segmentIndex = i;
-            
-            boolean firstTrain = true;
+
             for (LocalTime[] trainTimes : availableTrains) {
                 JRadioButton trainOption = new JRadioButton(String.format(
                     "%s - %s", 
                     trainTimes[0].format(DateTimeFormatter.ofPattern("HH:mm")),
                     trainTimes[1].format(DateTimeFormatter.ofPattern("HH:mm"))));
-                    
+
                 trainOption.addActionListener(e -> {
                     while (selectedTimes.size() > segmentIndex) {
                         selectedTimes.remove(selectedTimes.size() - 1);
@@ -261,38 +278,29 @@ public class TicketBookingSystem extends JFrame {
                     selectedTimes.add(trainTimes);
                     updateSchedule(path);
                     validateSelection();
-                    
-                    // Update next segment's available time
+
                     if (segmentIndex < path.size() - 2) {
                         LocalTime nextSegmentStartTime = trainTimes[1].plusMinutes(MIN_TRANSFER_TIME);
                         regenerateNextSegment(path, segmentIndex + 1, nextSegmentStartTime);
                     }
                 });
-                
+
                 group.add(trainOption);
                 segmentPanel.add(trainOption);
-                
-                if (firstTrain) {
-                    trainOption.setSelected(true);
-                    selectedTimes.add(trainTimes);
-                    currentTime = trainTimes[1].plusMinutes(MIN_TRANSFER_TIME);
-                    firstTrain = false;
-                }
             }
-            
-            // Add some spacing between segments
+
             segmentPanel.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createEmptyBorder(5, 5, 5, 5),
                 segmentPanel.getBorder()));
-            
+
             segmentsPanel.add(segmentPanel);
             if (i < path.size() - 2) {
                 segmentsPanel.add(Box.createRigidArea(new Dimension(10, 0)));
             }
         }
-        
+
         trainSelectionPanel.add(segmentsPanel);
-        validateSelection();
+        updateSchedule(path); // Clear the display initially
     }
     
     private void regenerateNextSegment(ArrayList<Integer> path, int segmentIndex, LocalTime startTime) {
@@ -350,7 +358,7 @@ public class TicketBookingSystem extends JFrame {
         if (selectedTimes.size() == currentPath.size() - 1) {
             boolean validTimes = true;
             LocalTime previousArrival = null;
-            
+
             for (LocalTime[] times : selectedTimes) {
                 if (previousArrival != null) {
                     int transferTime = (int) previousArrival.until(times[0], java.time.temporal.ChronoUnit.MINUTES);
@@ -361,70 +369,76 @@ public class TicketBookingSystem extends JFrame {
                 }
                 previousArrival = times[1];
             }
-            
+
             confirmButton.setEnabled(validTimes);
+            if (validTimes) {
+                confirmButton.setBackground(new Color(255, 69, 0));
+            }
         } else {
             confirmButton.setEnabled(false);
         }
     }
     
-    private void showTicket() {
+     private void showTicket() {
         if (selectedTimes.isEmpty() || currentPath.isEmpty()) {
             return;
         }
-        
+
         StringBuilder ticket = new StringBuilder();
-        ticket.append("=================================\n");
-        ticket.append("         METRO TICKET            \n");
-        ticket.append("=================================\n\n");
-        
-        ticket.append(String.format("From: Station %s\n", stationNames[currentPath.get(0)]));
-        ticket.append(String.format("To: Station %s\n", stationNames[currentPath.get(currentPath.size() - 1)]));
-        ticket.append(String.format("Date: %s\n\n", java.time.LocalDate.now()));
-        
-        ticket.append("Journey Details:\n");
-        ticket.append("-----------------\n");
-        
+        ticket.append("╔══════════════════════════════════════════════════════════════╗\n");
+        ticket.append("║                     METRO TICKET                             ║\n");
+        ticket.append("╠══════════════════════════════════════════════════════════════╣\n");
+        ticket.append(String.format("║  From: %-52s  ║\n", "Station " + stationNames[currentPath.get(0)]));
+        ticket.append(String.format("║  To:   %-52s  ║\n", "Station " + stationNames[currentPath.get(currentPath.size() - 1)]));
+        ticket.append(String.format("║  Date: %-52s  ║\n", java.time.LocalDate.now()));
+        ticket.append("╠══════════════════════════════════════════════════════════════╣\n");
+        ticket.append("║                    JOURNEY DETAILS                           ║\n");
+        ticket.append("╠══════════════════════════════════════════════════════════════╣\n");
+
         int totalMinutes = 0;
         LocalTime previousArrival = null;
-        
+
         for (int i = 0; i < selectedTimes.size(); i++) {
             LocalTime[] times = selectedTimes.get(i);
             int from = currentPath.get(i);
             int to = currentPath.get(i + 1);
-            
+
             if (previousArrival != null) {
                 int transferTime = (int) previousArrival.until(times[0], java.time.temporal.ChronoUnit.MINUTES);
-                ticket.append(String.format("Transfer time at Station %s: %d minutes\n",
-                    stationNames[from], transferTime));
+                ticket.append("║                                                              ║\n");
+                ticket.append(String.format("║  Transfer at Station %-41s  ║\n", stationNames[from]));
+                ticket.append(String.format("║  Wait time: %-47s  ║\n", transferTime + " minutes"));
+                ticket.append("║                                                              ║\n");
                 totalMinutes += transferTime;
             }
-            
+
             int journeyMinutes = (int) times[0].until(times[1], java.time.temporal.ChronoUnit.MINUTES);
-            ticket.append(String.format("Train %d: %s to %s\n", i + 1, stationNames[from], stationNames[to]));
-            ticket.append(String.format("Departure: %s\n", times[0].format(DateTimeFormatter.ofPattern("HH:mm"))));
-            ticket.append(String.format("Arrival: %s\n", times[1].format(DateTimeFormatter.ofPattern("HH:mm"))));
-            ticket.append(String.format("Journey time: %d minutes\n\n", journeyMinutes));
-            
+            ticket.append(String.format("║  Train %-53d  ║\n", i + 1));
+            ticket.append(String.format("║  %-56s  ║\n", stationNames[from] + " → " + stationNames[to]));
+            ticket.append(String.format("║  Departure: %-48s  ║\n", times[0].format(DateTimeFormatter.ofPattern("HH:mm")) + " hrs"));
+            ticket.append(String.format("║  Arrival:   %-48s  ║\n", times[1].format(DateTimeFormatter.ofPattern("HH:mm")) + " hrs"));
+            ticket.append(String.format("║  Duration:  %-48s  ║\n", journeyMinutes + " minutes"));
+            ticket.append("╟──────────────────────────────────────────────────────────────╢\n");
+
             totalMinutes += journeyMinutes;
             previousArrival = times[1];
         }
-        
-        ticket.append("---------------------------------\n");
-        ticket.append(String.format("Total journey time: %d minutes\n", totalMinutes));
-        ticket.append("Including transfers and waiting times\n");
-        ticket.append("\nImportant Notes:\n");
-        ticket.append("* Please arrive at least 5 minutes before departure\n");
-        ticket.append("* Station waiting time: 10 minutes\n");
-        ticket.append("* Minimum transfer time: 5 minutes\n");
-        ticket.append("=================================\n");
+
+        ticket.append(String.format("║  Total Journey Time: %-42s  ║\n", totalMinutes + " minutes"));
+        ticket.append("╠══════════════════════════════════════════════════════════════╣\n");
+        ticket.append("║                    IMPORTANT NOTES                           ║\n");
+        ticket.append("╠══════════════════════════════════════════════════════════════╣\n");
+        ticket.append("║  • Please arrive 5 minutes before departure                  ║\n");
+        ticket.append("║  • Keep this ticket until the end of your journey           ║\n");
+        ticket.append("║  • Follow station staff instructions at all times           ║\n");
+        ticket.append("╚══════════════════════════════════════════════════════════════╝\n");
         
         JTextArea ticketArea = new JTextArea(ticket.toString());
         ticketArea.setEditable(false);
         ticketArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
         
         JScrollPane scrollPane = new JScrollPane(ticketArea);
-        scrollPane.setPreferredSize(new Dimension(400, 500));
+        scrollPane.setPreferredSize(new Dimension(600, 600));
         
         JDialog ticketDialog = new JDialog(this, "Your Ticket", true);
         ticketDialog.add(scrollPane);
@@ -433,41 +447,44 @@ public class TicketBookingSystem extends JFrame {
         ticketDialog.setVisible(true);
     }
     
-    private void updateSchedule(ArrayList<Integer> path) {
-        if (selectedTimes.isEmpty()) {
-            return;
-        }
-
+     private void updateSchedule(ArrayList<Integer> path) {
         StringBuilder schedule = new StringBuilder();
-        schedule.append("Trip ").append(stationNames[path.get(0)])
-                .append(" to ").append(stationNames[path.get(path.size() - 1)])
-                .append("\n--------------\n");
 
-        int totalMinutes = 0;
-        LocalTime previousArrival = null;
+        if (!selectedTimes.isEmpty()) {
+            schedule.append(String.format("Trip %s to %s\n", 
+                    stationNames[path.get(0)], stationNames[path.get(path.size() - 1)]));
+            schedule.append("--------------\n\n");
 
-        for (int i = 0; i < selectedTimes.size(); i++) {
-            LocalTime[] times = selectedTimes.get(i);
-            schedule.append(String.format("%s to %s : Start at %s - Stops at %s\n",
-                    stationNames[path.get(i)],
-                    stationNames[path.get(i + 1)],
-                    times[0].format(DateTimeFormatter.ofPattern("HH:mm")),
-                    times[1].format(DateTimeFormatter.ofPattern("HH:mm"))));
+            int totalMinutes = 0;
+            LocalTime previousArrival = null;
 
-            // Calculate journey time for this segment
-            int journeyMinutes = (int) times[0].until(times[1], java.time.temporal.ChronoUnit.MINUTES);
-            totalMinutes += journeyMinutes;
+            for (int i = 0; i < selectedTimes.size(); i++) {
+                LocalTime[] times = selectedTimes.get(i);
+                schedule.append(String.format("%-15s to %-15s : Start at %s hrs - Stops at %s hrs\n",
+                        stationNames[path.get(i)],
+                        stationNames[path.get(i + 1)],
+                        times[0].format(DateTimeFormatter.ofPattern("HH:mm")),
+                        times[1].format(DateTimeFormatter.ofPattern("HH:mm"))));
 
-            // Add transfer time if there's a previous segment
-            if (previousArrival != null) {
-                int transferTime = (int) previousArrival.until(times[0], java.time.temporal.ChronoUnit.MINUTES);
-                totalMinutes += transferTime;
+                int journeyMinutes = (int) times[0].until(times[1], java.time.temporal.ChronoUnit.MINUTES);
+                totalMinutes += journeyMinutes;
+
+                if (previousArrival != null) {
+                    int transferTime = (int) previousArrival.until(times[0], java.time.temporal.ChronoUnit.MINUTES);
+                    schedule.append(String.format("\nYou have a waiting time at Station %s for %d minutes.\n\n",
+                            stationNames[path.get(i)], transferTime));
+                    totalMinutes += transferTime;
+                }
+
+                previousArrival = times[1];
             }
 
-            previousArrival = times[1];
+            if (!selectedTimes.isEmpty()) {
+                schedule.append("\nTotal time = " + totalMinutes + " minutes\n");
+                schedule.append("(Including waiting times at transfer stations)\n");
+            }
         }
 
-        schedule.append(String.format("\nTotal time = %d minutes", totalMinutes));
         resultArea.setText(schedule.toString());
     }
     
