@@ -78,29 +78,43 @@ public class TicketBookingSystem extends JFrame {
         inputPanel.add(startStationCombo);
         inputPanel.add(new JLabel("End Station:"));
         inputPanel.add(endStationCombo);
-        inputPanel.add(new JLabel("Departure Time:"));
+        inputPanel.add(new JLabel("Desired Departure Time:"));
         inputPanel.add(timeSpinner);
         
-        findPathButton = new JButton("Find Routes");
+        findPathButton = new JButton("Find Available Trains");
         findPathButton.addActionListener(e -> findPath());
         
         inputPanel.add(new JLabel(""));
         inputPanel.add(findPathButton);
+        
+        // Train Selection Panel
+        trainSelectionPanel = new JPanel();
+        trainSelectionPanel.setLayout(new BoxLayout(trainSelectionPanel, BoxLayout.Y_AXIS));
+        trainSelectionPanel.setBorder(BorderFactory.createTitledBorder("Available Trains"));
         
         // Result Area
         resultArea = new JTextArea(15, 40);
         resultArea.setEditable(false);
         JScrollPane scrollPane = new JScrollPane(resultArea);
         
+        // Main Panel
+        JPanel mainPanel = new JPanel(new BorderLayout());
+        mainPanel.add(trainSelectionPanel, BorderLayout.NORTH);
+        mainPanel.add(scrollPane, BorderLayout.CENTER);
+        
         // Add components to frame
         add(inputPanel, BorderLayout.NORTH);
-        add(scrollPane, BorderLayout.CENTER);
+        add(mainPanel, BorderLayout.CENTER);
         
         pack();
         setLocationRelativeTo(null);
+        setMinimumSize(new Dimension(800, 600));
     }
     
     private void findPath() {
+        trainSelectionPanel.removeAll();
+        selectedTimes.clear();
+        
         int startStation = startStationCombo.getSelectedIndex();
         int endStation = endStationCombo.getSelectedIndex();
         
@@ -135,8 +149,114 @@ public class TicketBookingSystem extends JFrame {
             return;
         }
         
-        // Generate schedule
-        generateSchedule(path, selectedTime);
+        // Generate available trains
+        generateTrainOptions(path, selectedTime);
+        
+        trainSelectionPanel.revalidate();
+        trainSelectionPanel.repaint();
+    }
+    
+    private void generateTrainOptions(ArrayList<Integer> path, LocalTime desiredTime) {
+        trainSelectionPanel.removeAll();
+        selectedTimes.clear();
+        
+        // For each segment of the journey
+        for (int i = 0; i < path.size() - 1; i++) {
+            int from = path.get(i);
+            int to = path.get(i + 1);
+            int distance = graph[from][to];
+            
+            // Calculate travel time for this segment
+            int travelMinutes = (int) Math.ceil((distance / (double) TRAIN_SPEED) * 60);
+            
+            // Get available trains for this segment
+            LocalTime baseTime = (i == 0) ? desiredTime : 
+                               selectedTimes.isEmpty() ? desiredTime :
+                               selectedTimes.get(i-1)[1].plusMinutes(MIN_TRANSFER_TIME);
+                               
+            ArrayList<LocalTime[]> availableTrains = getAvailableTrains(baseTime, travelMinutes);
+            
+            // Create selection panel for this segment
+            JPanel segmentPanel = new JPanel();
+            segmentPanel.setLayout(new BoxLayout(segmentPanel, BoxLayout.Y_AXIS));
+            segmentPanel.setBorder(BorderFactory.createTitledBorder(
+                String.format("Select train from %s to %s", stationNames[from], stationNames[to])));
+            
+            ButtonGroup group = new ButtonGroup();
+            final int segmentIndex = i;
+            
+            for (LocalTime[] trainTimes : availableTrains) {
+                JRadioButton trainOption = new JRadioButton(String.format(
+                    "Depart: %s - Arrive: %s", 
+                    trainTimes[0].format(DateTimeFormatter.ofPattern("HH:mm")),
+                    trainTimes[1].format(DateTimeFormatter.ofPattern("HH:mm"))));
+                    
+                trainOption.addActionListener(e -> {
+                    while (selectedTimes.size() > segmentIndex) {
+                        selectedTimes.remove(selectedTimes.size() - 1);
+                    }
+                    selectedTimes.add(trainTimes);
+                    updateSchedule(path);
+                });
+                
+                group.add(trainOption);
+                segmentPanel.add(trainOption);
+            }
+            
+            trainSelectionPanel.add(segmentPanel);
+        }
+    }
+    
+    private ArrayList<LocalTime[]> getAvailableTrains(LocalTime baseTime, int travelMinutes) {
+        ArrayList<LocalTime[]> trains = new ArrayList<>();
+        LocalTime startWindow = baseTime.minusMinutes(10);
+        LocalTime endWindow = baseTime.plusMinutes(70); // 1 hour plus 10 minutes
+        
+        LocalTime currentTrain = startWindow.withMinute((startWindow.getMinute() / TRAIN_INTERVAL) * TRAIN_INTERVAL);
+        
+        while (!currentTrain.isAfter(endWindow)) {
+            if (!currentTrain.isBefore(FIRST_TRAIN) && !currentTrain.isAfter(LAST_TRAIN)) {
+                LocalTime arrival = currentTrain.plusMinutes(travelMinutes);
+                if (!arrival.isAfter(LAST_TRAIN)) {
+                    trains.add(new LocalTime[]{currentTrain, arrival});
+                }
+            }
+            currentTrain = currentTrain.plusMinutes(TRAIN_INTERVAL);
+        }
+        
+        return trains;
+    }
+    
+    private void updateSchedule(ArrayList<Integer> path) {
+        if (selectedTimes.size() != path.size() - 1) {
+            return;
+        }
+        
+        StringBuilder schedule = new StringBuilder();
+        schedule.append("Trip ").append(stationNames[path.get(0)])
+                .append(" to ").append(stationNames[path.get(path.size() - 1)])
+                .append("\n--------------\n");
+        
+        int totalMinutes = 0;
+        
+        for (int i = 0; i < path.size() - 1; i++) {
+            LocalTime[] times = selectedTimes.get(i);
+            schedule.append(String.format("%s to %s : Start at %s - Stops at %s\n",
+                    stationNames[path.get(i)],
+                    stationNames[path.get(i + 1)],
+                    times[0].format(DateTimeFormatter.ofPattern("HH:mm")),
+                    times[1].format(DateTimeFormatter.ofPattern("HH:mm"))));
+            
+            totalMinutes += times[0].until(times[1], java.time.temporal.ChronoUnit.MINUTES);
+            
+            if (i < selectedTimes.size() - 1) {
+                totalMinutes += selectedTimes.get(i+1)[0].until(times[1], 
+                    java.time.temporal.ChronoUnit.MINUTES);
+            }
+        }
+        
+        schedule.append(String.format("\nTotal time = %d minutes", totalMinutes));
+        resultArea.setText(schedule.toString());
     }
     
     private void dijkstra(int startStation, int[] distances, int[] previousStations) {
