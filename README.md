@@ -54,7 +54,7 @@ A Java Swing-based desktop application for booking metro tickets with an interac
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/metro-ticket-booking.git](https://github.com/WWI2196/Metro-Booking-System.git
+git clone https://github.com/WWI2196/Metro-Booking-System.git
 ```
 
 2. Navigate to the project directory:
