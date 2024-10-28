@@ -13,7 +13,8 @@ public class TicketBookingSystem extends JFrame {
     private static final int MIN_TRANSFER_TIME = 5; // minutes
     private static final LocalTime FIRST_TRAIN = LocalTime.of(6, 0);
     private static final LocalTime LAST_TRAIN = LocalTime.of(20, 0);
-    private static final int TRAIN_INTERVAL = 20; // minutes between trains
+    private static final int TRAIN_INTERVAL = 10; // minutes between trains
+    private static final int SEARCH_WINDOW = 30; // minutes to search before and after desired time
     
     private JComboBox<String> startStationCombo;
     private JComboBox<String> endStationCombo;
@@ -34,8 +35,9 @@ public class TicketBookingSystem extends JFrame {
         selectedTimes = new ArrayList<>();
     }
     
+    private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm");
+    
     private void initializeGraph() {
-        // Initialize with infinity (no connection)
         for (int i = 0; i < NUM_STATIONS; i++) {
             Arrays.fill(graph[i], INFINITY);
             graph[i][i] = 0;
@@ -68,9 +70,9 @@ public class TicketBookingSystem extends JFrame {
         JPanel inputPanel = new JPanel(new GridBagLayout());
         inputPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
         
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.insets = new Insets(5, 5, 5, 5);
+        GridBagConstraints gridBagLayout = new GridBagConstraints();
+        gridBagLayout.fill = GridBagConstraints.HORIZONTAL;
+        gridBagLayout.insets = new Insets(5, 5, 5, 5);
         
         startStationCombo = new JComboBox<>(stationNames);
         endStationCombo = new JComboBox<>(stationNames);
@@ -80,58 +82,39 @@ public class TicketBookingSystem extends JFrame {
         JSpinner.DateEditor timeEditor = new JSpinner.DateEditor(timeSpinner, "HH:mm");
         timeSpinner.setEditor(timeEditor);
         
-        // Add components with GridBagLayout
-        gbc.gridx = 0; gbc.gridy = 0;
-        inputPanel.add(new JLabel("Start Station:"), gbc);
+        gridBagLayout.gridx = 0; gridBagLayout.gridy = 0;
+        inputPanel.add(new JLabel("Start Station:"), gridBagLayout);
         
-        gbc.gridx = 1;
-        inputPanel.add(startStationCombo, gbc);
+        gridBagLayout.gridx = 1;
+        inputPanel.add(startStationCombo, gridBagLayout);
         
-        gbc.gridx = 0; gbc.gridy = 1;
-        inputPanel.add(new JLabel("End Station:"), gbc);
+        gridBagLayout.gridx = 0; gridBagLayout.gridy = 1;
+        inputPanel.add(new JLabel("End Station:"), gridBagLayout);
         
-        gbc.gridx = 1;
-        inputPanel.add(endStationCombo, gbc);
+        gridBagLayout.gridx = 1;
+        inputPanel.add(endStationCombo, gridBagLayout);
         
-        gbc.gridx = 0; gbc.gridy = 2;
-        inputPanel.add(new JLabel("Desired Departure Time:"), gbc);
+        gridBagLayout.gridx = 0; gridBagLayout.gridy = 2;
+        inputPanel.add(new JLabel("Desired Departure Time:"), gridBagLayout);
         
-        gbc.gridx = 1;
-        inputPanel.add(timeSpinner, gbc);
+        gridBagLayout.gridx = 1;
+        inputPanel.add(timeSpinner, gridBagLayout);
         
         findPathButton = new JButton("Find Available Trains");
         findPathButton.addActionListener(e -> findPath());
         
-        gbc.gridx = 0; gbc.gridy = 3;
-        gbc.gridwidth = 2;
-        inputPanel.add(findPathButton, gbc);
+        gridBagLayout.gridx = 0; gridBagLayout.gridy = 3;
+        gridBagLayout.gridwidth = 2;
+        inputPanel.add(findPathButton, gridBagLayout);
         
         confirmButton = new JButton("Confirm Booking");
         confirmButton.setEnabled(false);
-        confirmButton.setBackground(new Color(255, 69, 0)); // Bright orange-red color
-        confirmButton.setForeground(Color.WHITE);
         confirmButton.setFont(new Font("Arial", Font.BOLD, 14));
         confirmButton.setPreferredSize(new Dimension(120, 35));
-        confirmButton.setBorder(BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(new Color(204, 55, 0), 2),
-            BorderFactory.createEmptyBorder(5, 10, 5, 10)
-        ));
-        // Add hover effect
-        confirmButton.addMouseListener(new MouseAdapter() {
-            public void mouseEntered(MouseEvent e) {
-                if(confirmButton.isEnabled()) {
-                    confirmButton.setBackground(new Color(204, 55, 0));
-                }
-            }
-            public void mouseExited(MouseEvent e) {
-                if(confirmButton.isEnabled()) {
-                    confirmButton.setBackground(new Color(255, 69, 0));
-                }
-            }
-        });
+        confirmButton.setBorder(BorderFactory.createEmptyBorder(5, 10, 5, 10));
         confirmButton.addActionListener(e -> showTicket());
         
-        // Train Selection Panel with horizontal layout
+        // Train Selection Panel
         trainSelectionPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         trainSelectionPanel.setBorder(BorderFactory.createTitledBorder("Available Trains"));
         JScrollPane trainScrollPane = new JScrollPane(trainSelectionPanel);
@@ -147,11 +130,10 @@ public class TicketBookingSystem extends JFrame {
         mainPanel.add(trainScrollPane, BorderLayout.NORTH);
         mainPanel.add(resultScrollPane, BorderLayout.CENTER);
         mainPanel.add(confirmButton, BorderLayout.SOUTH);
-        
-        // Add components to frame
+
         add(inputPanel, BorderLayout.NORTH);
         add(mainPanel, BorderLayout.CENTER);
-        
+
         pack();
         setLocationRelativeTo(null);
         setMinimumSize(new Dimension(800, 600));
@@ -159,42 +141,55 @@ public class TicketBookingSystem extends JFrame {
     
     private ArrayList<LocalTime[]> getAvailableTrains(LocalTime currentTime, int travelMinutes) {
         ArrayList<LocalTime[]> trains = new ArrayList<>();
-        LocalTime endWindow = currentTime.plusMinutes(60); // Show trains for the next hour only
-        
-        // Round up to the next available train time
-        LocalTime nextTrainTime = currentTime;
+        LocalTime systemTime = LocalTime.now(); // Get current system time
+
+        LocalTime startWindow = currentTime.minusMinutes(SEARCH_WINDOW);
+        LocalTime endWindow = currentTime.plusMinutes(SEARCH_WINDOW);
+
+        if (startWindow.isBefore(systemTime)) {
+            startWindow = systemTime;
+        }
+
+        // Start with the first possible train time
+        LocalTime nextTrainTime = startWindow;
         int minutes = nextTrainTime.getMinute();
         int roundedMinutes = ((minutes + TRAIN_INTERVAL - 1) / TRAIN_INTERVAL) * TRAIN_INTERVAL;
-        
-        // Handle the case where roundedMinutes equals 60
+
         if (roundedMinutes == 60) {
             nextTrainTime = nextTrainTime.plusHours(1).withMinute(0);
         } else {
             nextTrainTime = nextTrainTime.withMinute(roundedMinutes);
         }
         nextTrainTime = nextTrainTime.withSecond(0).withNano(0);
-        
-        while (!nextTrainTime.isAfter(endWindow)) {
-            if (!nextTrainTime.isBefore(currentTime) && !nextTrainTime.isAfter(LAST_TRAIN)) {
-                LocalTime arrival = nextTrainTime.plusMinutes(travelMinutes);
+
+        int optionsCount = 0;
+        while (!nextTrainTime.isAfter(endWindow) && optionsCount < 5) {
+            // Check if train has not departed yet
+            if (!nextTrainTime.isBefore(systemTime) && 
+                !nextTrainTime.isBefore(FIRST_TRAIN) && 
+                !nextTrainTime.isAfter(LAST_TRAIN)) {
+
+                LocalTime arrival = nextTrainTime.plusMinutes(travelMinutes + STATION_WAIT_TIME);
                 if (!arrival.isAfter(LAST_TRAIN)) {
                     trains.add(new LocalTime[]{nextTrainTime, arrival});
+                    optionsCount++;
                 }
             }
             nextTrainTime = nextTrainTime.plusMinutes(TRAIN_INTERVAL);
         }
-        
+
+        trains.sort((a, b) -> a[0].compareTo(b[0]));
         return trains;
-    }
+}
     
     private void findPath() {
         trainSelectionPanel.removeAll();
         selectedTimes.clear();
         confirmButton.setEnabled(false);
-        
+
         int startStation = startStationCombo.getSelectedIndex();
         int endStation = endStationCombo.getSelectedIndex();
-        
+
         if (startStation == endStation) {
             JOptionPane.showMessageDialog(this, "Please select different stations for start and end points.");
             return;
@@ -206,19 +201,29 @@ public class TicketBookingSystem extends JFrame {
                                                    java.time.ZoneId.systemDefault())
                                         .withSecond(0)
                                         .withNano(0);
+        LocalTime currentTime = LocalTime.now();
         
-        if (selectedTime.isBefore(FIRST_TRAIN) || selectedTime.isAfter(LAST_TRAIN)) {
+        if (selectedTime.isBefore(currentTime)) {
             JOptionPane.showMessageDialog(this, 
-                "Trains operate only between 06:00 and 20:00.");
+                "Please set a proper depature time considering your checking-in time.");
             return;
         }
         
-        // Find shortest path
+        if (selectedTime.isBefore(FIRST_TRAIN) || selectedTime.isAfter(LAST_TRAIN)) {
+            JOptionPane.showMessageDialog(this, 
+                "Trains operate only between " + 
+                FIRST_TRAIN.format(TIME_FORMATTER) + " and " + 
+                LAST_TRAIN.format(TIME_FORMATTER) + ".");
+            return;
+        }
+        
+        // To find shortest path
         int[] distances = new int[NUM_STATIONS];
         int[] previousStations = new int[NUM_STATIONS];
         dijkstra(startStation, distances, previousStations);
         
-        // Generate route
+        
+        // Get routes
         currentPath = reconstructPath(previousStations, startStation, endStation);
         
         if (currentPath.isEmpty()) {
@@ -226,7 +231,7 @@ public class TicketBookingSystem extends JFrame {
             return;
         }
         
-        // Generate available trains
+        // Get available trains
         generateTrainOptions(currentPath, selectedTime);
         
         trainSelectionPanel.revalidate();
@@ -303,7 +308,7 @@ public class TicketBookingSystem extends JFrame {
         updateSchedule(path); // Clear the display initially
     }
     
-    private void regenerateNextSegment(ArrayList<Integer> path, int segmentIndex, LocalTime startTime) {
+     private void regenerateNextSegment(ArrayList<Integer> path, int segmentIndex, LocalTime startTime) {
         int from = path.get(segmentIndex);
         int to = path.get(segmentIndex + 1);
         int distance = graph[from][to];
@@ -311,14 +316,17 @@ public class TicketBookingSystem extends JFrame {
         int travelMinutes = (int) Math.ceil((distance / (double) TRAIN_SPEED) * 60);
         ArrayList<LocalTime[]> availableTrains = getAvailableTrains(startTime, travelMinutes);
         
-        // Update the UI for the next segment
+        // Remove impossible train connections
+        availableTrains.removeIf(train -> train[0].isBefore(startTime.plusMinutes(MIN_TRANSFER_TIME)));
+        
+        // Update the UI to accomodate the next train times
         Component[] components = trainSelectionPanel.getComponents();
         if (components.length > 0 && components[0] instanceof JPanel) {
             JPanel segmentsPanel = (JPanel) components[0];
             Component[] segmentPanels = segmentsPanel.getComponents();
             
             if (segmentIndex < segmentPanels.length) {
-                JPanel nextSegmentPanel = (JPanel) segmentPanels[segmentIndex * 2]; // Account for spacing components
+                JPanel nextSegmentPanel = (JPanel) segmentPanels[segmentIndex * 2];
                 nextSegmentPanel.removeAll();
                 
                 ButtonGroup group = new ButtonGroup();
@@ -336,7 +344,6 @@ public class TicketBookingSystem extends JFrame {
                         updateSchedule(path);
                         validateSelection();
                         
-                        // Update next segment if exists
                         if (segmentIndex < path.size() - 2) {
                             LocalTime nextSegmentStartTime = trainTimes[1].plusMinutes(MIN_TRANSFER_TIME);
                             regenerateNextSegment(path, segmentIndex + 1, nextSegmentStartTime);
@@ -356,47 +363,32 @@ public class TicketBookingSystem extends JFrame {
     private void validateSelection() {
         // Check if all segments have selected trains and times are valid
         if (selectedTimes.size() == currentPath.size() - 1) {
-            boolean validTimes = true;
-            LocalTime previousArrival = null;
-
-            for (LocalTime[] times : selectedTimes) {
-                if (previousArrival != null) {
-                    int transferTime = (int) previousArrival.until(times[0], java.time.temporal.ChronoUnit.MINUTES);
-                    if (transferTime < MIN_TRANSFER_TIME) {
-                        validTimes = false;
-                        break;
-                    }
-                }
-                previousArrival = times[1];
-            }
-
-            confirmButton.setEnabled(validTimes);
-            if (validTimes) {
-                confirmButton.setBackground(new Color(255, 69, 0));
-            }
+            confirmButton.setEnabled(true);
+            updateSchedule(currentPath);
         } else {
             confirmButton.setEnabled(false);
         }
     }
     
-     private void showTicket() {
+    private void showTicket() {
         if (selectedTimes.isEmpty() || currentPath.isEmpty()) {
             return;
         }
 
         StringBuilder ticket = new StringBuilder();
         ticket.append("╔══════════════════════════════════════════════════════════════╗\n");
-        ticket.append("║                     METRO TICKET                             ║\n");
+        ticket.append("                      METRO TICKET                      \n");
         ticket.append("╠══════════════════════════════════════════════════════════════╣\n");
-        ticket.append(String.format("║  From: %-52s  ║\n", "Station " + stationNames[currentPath.get(0)]));
-        ticket.append(String.format("║  To:   %-52s  ║\n", "Station " + stationNames[currentPath.get(currentPath.size() - 1)]));
-        ticket.append(String.format("║  Date: %-52s  ║\n", java.time.LocalDate.now()));
-        ticket.append("╠══════════════════════════════════════════════════════════════╣\n");
-        ticket.append("║                    JOURNEY DETAILS                           ║\n");
+        ticket.append(String.format("  From: %-52s  \n", "Station " + stationNames[currentPath.get(0)]));
+        ticket.append(String.format("  To:   %-52s  \n", "Station " + stationNames[currentPath.get(currentPath.size() - 1)]));
+        ticket.append(String.format("  Date: %-52s  \n", java.time.LocalDate.now()));
+        ticket.append("\n");
+        ticket.append("                     JOURNEY DETAILS                    \n");
         ticket.append("╠══════════════════════════════════════════════════════════════╣\n");
 
         int totalMinutes = 0;
         LocalTime previousArrival = null;
+        boolean hasTightConnection = false;
 
         for (int i = 0; i < selectedTimes.size(); i++) {
             LocalTime[] times = selectedTimes.get(i);
@@ -405,41 +397,49 @@ public class TicketBookingSystem extends JFrame {
 
             if (previousArrival != null) {
                 int transferTime = (int) previousArrival.until(times[0], java.time.temporal.ChronoUnit.MINUTES);
-                ticket.append("║                                                              ║\n");
-                ticket.append(String.format("║  Transfer at Station %-41s  ║\n", stationNames[from]));
-                ticket.append(String.format("║  Wait time: %-47s  ║\n", transferTime + " minutes"));
-                ticket.append("║                                                              ║\n");
+                ticket.append("                                                              \n");
+                ticket.append(String.format("  Transfer at Station %-41s  \n", stationNames[from]));
+                ticket.append(String.format("  Wait time: %-47s  \n", transferTime + " minutes"));
+                if (transferTime < MIN_TRANSFER_TIME) {
+                    ticket.append("  ⚠ WARNING: This is a tight connection!                      \n");
+                    hasTightConnection = true;
+                }
+                ticket.append("                                                              \n");
                 totalMinutes += transferTime;
             }
 
             int journeyMinutes = (int) times[0].until(times[1], java.time.temporal.ChronoUnit.MINUTES);
-            ticket.append(String.format("║  Train %-53d  ║\n", i + 1));
-            ticket.append(String.format("║  %-56s  ║\n", stationNames[from] + " → " + stationNames[to]));
-            ticket.append(String.format("║  Departure: %-48s  ║\n", times[0].format(DateTimeFormatter.ofPattern("HH:mm")) + " hrs"));
-            ticket.append(String.format("║  Arrival:   %-48s  ║\n", times[1].format(DateTimeFormatter.ofPattern("HH:mm")) + " hrs"));
-            ticket.append(String.format("║  Duration:  %-48s  ║\n", journeyMinutes + " minutes"));
+            ticket.append(String.format("  Train %-53d  \n", i + 1));
+            ticket.append(String.format("  %-56s  \n", stationNames[from] + " → " + stationNames[to]));
+            ticket.append(String.format("  Departure: %-48s  \n", times[0].format(DateTimeFormatter.ofPattern("HH:mm")) + " hrs"));
+            ticket.append(String.format("  Arrival:   %-48s  \n", times[1].format(DateTimeFormatter.ofPattern("HH:mm")) + " hrs"));
+            ticket.append(String.format("  Duration:  %-48s  \n", journeyMinutes + " minutes"));
             ticket.append("╟──────────────────────────────────────────────────────────────╢\n");
 
             totalMinutes += journeyMinutes;
             previousArrival = times[1];
         }
 
-        ticket.append(String.format("║  Total Journey Time: %-42s  ║\n", totalMinutes + " minutes"));
+        ticket.append(String.format("  Total Journey Time: %-42s  \n", totalMinutes + " minutes"));
+        ticket.append("╟──────────────────────────────────────────────────────────────╢\n");
+        ticket.append("                     IMPORTANT NOTES                     \n");
         ticket.append("╠══════════════════════════════════════════════════════════════╣\n");
-        ticket.append("║                    IMPORTANT NOTES                           ║\n");
-        ticket.append("╠══════════════════════════════════════════════════════════════╣\n");
-        ticket.append("║  • Please arrive 5 minutes before departure                  ║\n");
-        ticket.append("║  • Keep this ticket until the end of your journey           ║\n");
-        ticket.append("║  • Follow station staff instructions at all times           ║\n");
+        if (hasTightConnection) {
+            ticket.append("  ⚠ WARNING: This journey includes tight connections!          \n");
+            ticket.append("  Please be prepared to move quickly between trains.           \n");
+        }
+        ticket.append("  • Please arrive 5 minutes before departure\n");
+        ticket.append("  • Keep this ticket until the end of your journey\n");
+        ticket.append("  • Follow station staff instructions at all times\n");
         ticket.append("╚══════════════════════════════════════════════════════════════╝\n");
-        
+
         JTextArea ticketArea = new JTextArea(ticket.toString());
         ticketArea.setEditable(false);
         ticketArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
-        
+
         JScrollPane scrollPane = new JScrollPane(ticketArea);
         scrollPane.setPreferredSize(new Dimension(600, 600));
-        
+
         JDialog ticketDialog = new JDialog(this, "Your Ticket", true);
         ticketDialog.add(scrollPane);
         ticketDialog.pack();
@@ -457,6 +457,7 @@ public class TicketBookingSystem extends JFrame {
 
             int totalMinutes = 0;
             LocalTime previousArrival = null;
+            boolean hasTightConnection = false;
 
             for (int i = 0; i < selectedTimes.size(); i++) {
                 LocalTime[] times = selectedTimes.get(i);
@@ -471,9 +472,14 @@ public class TicketBookingSystem extends JFrame {
 
                 if (previousArrival != null) {
                     int transferTime = (int) previousArrival.until(times[0], java.time.temporal.ChronoUnit.MINUTES);
-                    schedule.append(String.format("\nYou have a waiting time at Station %s for %d minutes.\n\n",
-                            stationNames[path.get(i)], transferTime));
+                    String warningMessage = transferTime < MIN_TRANSFER_TIME ? 
+                        " ⚠ WARNING: This is a tight connection!" : "";
+                    schedule.append(String.format("\nYou have a waiting time at Station %s for %d minutes.%s\n\n",
+                            stationNames[path.get(i)], transferTime, warningMessage));
                     totalMinutes += transferTime;
+                    if (transferTime < MIN_TRANSFER_TIME) {
+                        hasTightConnection = true;
+                    }
                 }
 
                 previousArrival = times[1];
@@ -482,6 +488,10 @@ public class TicketBookingSystem extends JFrame {
             if (!selectedTimes.isEmpty()) {
                 schedule.append("\nTotal time = " + totalMinutes + " minutes\n");
                 schedule.append("(Including waiting times at transfer stations)\n");
+                if (hasTightConnection) {
+                    schedule.append("\n⚠ WARNING: This journey includes tight connections!\n");
+                    schedule.append("Please be prepared to move quickly between trains.\n");
+                }
             }
         }
 
